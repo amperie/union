@@ -7,6 +7,11 @@ import matplotlib as mpl
 import io, html, base64
 
 
+# Settings for the workflow
+cache_enabled = True
+data_url = 'https://raw.githubusercontent.com/facebook/prophet/main/examples/example_wp_log_peyton_manning.csv'
+
+
 image = ImageSpec(
     requirements=Path(__file__).parent / "requirements.txt",
 )
@@ -14,7 +19,7 @@ image = ImageSpec(
 
 @task(
     container_image=image,
-    cache=True,
+    cache=cache_enabled,
     cache_version="1.0",
 )
 def load_ts_data(url: str) -> pd.DataFrame:
@@ -24,7 +29,7 @@ def load_ts_data(url: str) -> pd.DataFrame:
 
 @task(
     container_image=image,
-    cache=True,
+    cache=cache_enabled,
     cache_version="1.0",
 )
 def train_model(df: pd.DataFrame) -> Prophet:
@@ -35,7 +40,7 @@ def train_model(df: pd.DataFrame) -> Prophet:
 
 @task(
     container_image=image,
-    cache=True,
+    cache=cache_enabled,
     cache_version="1.0",
 )
 def predict(model: Prophet, df: pd.DataFrame) -> pd.DataFrame:
@@ -59,7 +64,7 @@ def make_plots(model: Prophet, forecast: pd.DataFrame):
 
 @workflow
 def prophet_workflow(url: str) -> pd.DataFrame:
-    url = 'https://raw.githubusercontent.com/facebook/prophet/main/examples/example_wp_log_peyton_manning.csv'
+    url = data_url
 
     df = load_ts_data(url)
     model = train_model(df)
