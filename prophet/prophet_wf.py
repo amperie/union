@@ -3,6 +3,8 @@ from prophet import Prophet
 from flytekit import ImageSpec
 from pathlib import Path
 from flytekit import task, workflow, Deck
+import matplotlib as mpl
+import io, html, base64
 
 
 image = ImageSpec(
@@ -48,7 +50,8 @@ def make_plots(model: Prophet, forecast: pd.DataFrame):
     fig2 = model.plot_components(forecast)
 
     dk = Deck("Prophet")
-    dk.append(fig1)
+    dk.append(_convert_fig_into_html(fig1))
+    dk.append(_convert_fig_into_html(fig2))
 
 
 @workflow
@@ -61,6 +64,12 @@ def prophet_workflow(url: str) -> pd.DataFrame:
     make_plots(model, forecast)
     return forecast
 
+
+def _convert_fig_into_html(fig: mpl.figure.Figure) -> str:
+    img_buf = io.BytesIO()
+    fig.savefig(img_buf, format="png")
+    img_base64 = base64.b64encode(img_buf.getvalue()).decode()
+    return f'<img src="data:image/png;base64,{img_base64}" alt="Rendered Image" />'
 
 if __name__ == "__main__":
     print("In Main")
