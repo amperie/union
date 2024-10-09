@@ -14,6 +14,7 @@ image = ImageSpec(
 
 @task(
     container_image=image,
+    cache=True,
     cache_version="1.0",
 )
 def load_ts_data(url: str) -> pd.DataFrame:
@@ -23,6 +24,7 @@ def load_ts_data(url: str) -> pd.DataFrame:
 
 @task(
     container_image=image,
+    cache=True,
     cache_version="1.0",
 )
 def train_model(df: pd.DataFrame) -> Prophet:
@@ -33,6 +35,7 @@ def train_model(df: pd.DataFrame) -> Prophet:
 
 @task(
     container_image=image,
+    cache=True,
     cache_version="1.0",
 )
 def predict(model: Prophet, df: pd.DataFrame) -> pd.DataFrame:
