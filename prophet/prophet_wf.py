@@ -83,16 +83,16 @@ def make_plots(model: Prophet, forecast: pd.DataFrame):
     enable_deck=True,
 )
 def evaluate_model(model: Prophet):
+    dk = Deck("Model Evaluation")
     df_cv = cross_validation(model, initial='730 days', period='180 days', horizon='365 days')
     fig1 = plot_cross_validation_metric(df_cv, metric='mape')
     dk.append(_convert_fig_into_html(fig1))
     df_p = performance_metrics(df_cv)
-    dk = Deck("Model Evaluation")
     dk.append(df_p.to_html())
 
 
 @workflow
-def prophet_workflow() -> pd.DataFrame:
+def prophet_workflow(url: str) -> pd.DataFrame:
     url = data_url
 
     df = load_ts_data(url)
