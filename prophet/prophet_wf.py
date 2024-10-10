@@ -92,7 +92,7 @@ def evaluate_model(model: Prophet):
 
 
 @workflow
-def prophet_workflow(url: str) -> pd.DataFrame:
+def prophet_workflow() -> pd.DataFrame:
     url = data_url
 
     df = load_ts_data(url)
