@@ -6,7 +6,7 @@ from flytekit import ImageSpec
 from pathlib import Path
 from flytekit import task, workflow, Deck
 import matplotlib as mpl
-import io, html, base64
+import io, base64
 
 
 # Settings for the workflow
