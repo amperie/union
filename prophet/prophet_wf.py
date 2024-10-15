@@ -110,6 +110,7 @@ def _convert_fig_into_html(fig: mpl.figure.Figure) -> str:
     img_base64 = base64.b64encode(img_buf.getvalue()).decode()
     return f'<img src="data:image/png;base64,{img_base64}" alt="Rendered Image" />'
 
+
 if __name__ == "__main__":
     print("In Main")
     prophet_workflow("")
