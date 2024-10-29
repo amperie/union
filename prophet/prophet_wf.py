@@ -4,9 +4,12 @@ from prophet.diagnostics import cross_validation, performance_metrics
 from prophet.plot import plot_cross_validation_metric
 from flytekit import ImageSpec
 from pathlib import Path
-from flytekit import task, workflow, Deck
+from flytekit import task, workflow, Deck, map_task
+from flytekit.types.file import FlyteFile
+from dataclasses import dataclass
 import matplotlib as mpl
 import io, base64
+from functools import partial
 
 
 # Settings for the workflow
@@ -17,10 +20,10 @@ add_regressors = True
 playoffs = pd.DataFrame({
     'holiday': 'playoff',
     'ds': pd.to_datetime(['2008-01-13', '2009-01-03', '2010-01-16',
-                        '2010-01-24', '2010-02-07', '2011-01-08',
-                        '2013-01-12', '2014-01-12', '2014-01-19',
-                        '2014-02-02', '2015-01-11', '2016-01-17',
-                        '2016-01-24', '2016-02-07']),
+                            '2010-01-24', '2010-02-07', '2011-01-08',
+                            '2013-01-12', '2014-01-12', '2014-01-19',
+                            '2014-02-02', '2015-01-11', '2016-01-17',
+                            '2016-01-24', '2016-02-07']),
     'lower_window': 0,
     'upper_window': 1,
 })
@@ -84,7 +87,8 @@ def make_plots(model: Prophet, forecast: pd.DataFrame):
 )
 def evaluate_model(model: Prophet) -> pd.DataFrame:
     dk = Deck("Model Evaluation")
-    df_cv = cross_validation(model, initial='730 days', period='180 days', horizon='365 days')
+    df_cv = cross_validation(
+        model, initial='730 days', period='180 days', horizon='365 days')
     fig1 = plot_cross_validation_metric(df_cv, metric='mape')
     dk.append(_convert_fig_into_html(fig1))
     df_p = performance_metrics(df_cv)
@@ -92,11 +96,58 @@ def evaluate_model(model: Prophet) -> pd.DataFrame:
     return df_p
 
 
+@dataclass
+class HyperParamResults:
+    changepoint_prior_scale: float
+    mape: float
+
+
+@task(
+    container_image=image,
+)
+def hyper_param_tuning(
+        df: pd.DataFrame, changepoint_prior_scale: float)\
+        -> FlyteFile:
+
+    m = Prophet(changepoint_prior_scale=changepoint_prior_scale)
+    m.fit(df)
+    df_cv = cross_validation(
+        m, initial='730 days', period='180 days', horizon='365 days')
+    df_p = performance_metrics(df_cv)
+    retVal = {
+        'changepoint_prior_scale': changepoint_prior_scale,
+        'mape': df_p['mape'].mean(),
+        'model': m
+    }
+    retVal = FlyteFile(retVal)
+    return retVal
+
+
+@task(
+    container_image=image,
+)
+def get_best_model(
+        hyper_results: list[FlyteFile]) -> FlyteFile:
+    retVal = None
+    for f in hyper_results:
+        d = f.to_dict()
+        if retVal is None or d['mape'] < retVal['mape']:
+            retVal = d
+    return d
+
+
 @workflow
 def prophet_workflow(url: str) -> pd.DataFrame:
     url = data_url
 
     df = load_ts_data(url)
+    # Hyperparameter tuning
+    changepoint_prior_scale = [0.001, 0.01]
+    hyper_partial = partial(hyper_param_tuning, df=df)
+    hyper_results = map_task(hyper_partial)\
+        (changepoint_prior_scale=changepoint_prior_scale)
+    best_model = get_best_model(hyper_results)
+
     model = train_model(df)
     forecast = predict(model, df)
     make_plots(model, forecast)
