@@ -5,17 +5,17 @@ from flytekit import current_context
 from flytekit import ImageSpec
 from flytekit.types.file import FlyteFile
 from flytekit.types.directory import FlyteDirectory
+from flytekit.types.structured import StructuredDataset
 import urllib.request
 from pathlib import Path
 import pandas as pd
 import torch
 from torch import nn
 import sentence_transformers
-from datasets import load_dataset
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import log_loss
-import yaml
-# import ft_tasks as ft_tasks
+from ft_tasks import evaluate_model, plot_results
+import tempfile
 
 # Config variables
 enable_cache = False
@@ -36,6 +36,12 @@ class TrainingResults:
     train_logloss: float
     model: FlyteDirectory
     classifier: FlyteDirectory
+
+
+@dataclass
+class TotalDataset:
+    train_data: StructuredDataset
+    val_data: StructuredDataset
 
 
 # Custom dataset class
@@ -97,8 +103,8 @@ def download_dataset() -> FlyteFile:
     cache=enable_cache,
     container_image=image,
 )
-def process_dataset(data: FlyteFile, nrows: int = 1000) -> pd.DataFrame:
-    df = pd.read_csv(data, sep='\t', nrows=nrows)
+def process_dataset(data: FlyteFile, nrows: int = 1000) -> TotalDataset:
+    df = pd.read_csv(data, sep='\t', nrows=nrows*2)
     df["target"] = df["is_duplicate"]
     df['prompt'] =\
         df.apply(
@@ -107,7 +113,10 @@ def process_dataset(data: FlyteFile, nrows: int = 1000) -> pd.DataFrame:
             f"Question 1: {row.question1}\n"
             f"Question 2: {row.question2}", axis=1
             )
-    retVal = df[['prompt', 'target']]
+    total_data = df[['prompt', 'target']]
+    retVal = TotalDataset(
+        StructuredDataset(dataframe=total_data[:nrows]),
+        StructuredDataset(dataframe=total_data[nrows:]))
     return retVal
 
 
@@ -120,8 +129,9 @@ def get_model(model_name: str) -> FlyteDirectory:
     from huggingface_hub import login, snapshot_download
 
     ctx = current_context()
-    working_dir = Path(ctx.working_directory)
-    working_dir = Path("models")
+    # working_dir = Path(ctx.working_directory)
+    working_dir = Path(tempfile.gettempdir())
+    # working_dir = Path("models")
     model_cache_dir = working_dir / "model_cache"
 
     login(token="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")
@@ -136,10 +146,11 @@ def get_model(model_name: str) -> FlyteDirectory:
     enable_deck=True,
 )
 def train_model(
-    model_folder: FlyteDirectory, df: pd.DataFrame,
+    model_folder: FlyteDirectory, data: TotalDataset,
     train_cfg: TrainingConfig)\
         -> TrainingResults:
 
+    df = data.train_data.open(pd.DataFrame).all()
     model_folder.download()
     ctx = current_context()
     working_dir = Path(ctx.working_directory)
@@ -232,10 +243,25 @@ def train_model(
     return retVal
 
 
+@task(
+    container_image=image,
+    enable_deck=True,
+)
+def model_evaluation(
+    results: TrainingResults, total_data: TotalDataset)\
+        -> TrainingResults:
+    df_val = total_data.val_data.open(pd.DataFrame).all()
+    model = sentence_transformers.SentenceTransformer(results.model.path)
+    classifier = ClassifierHead.load_state_dict(
+        torch.load(
+            os.path.join(results.classifier.path, "classifier_head.pt")))
+    return evaluate_model(df_val, model, classifier)
+
+
 @workflow
 def finetuning_wf(nrows: int = 1000) -> TrainingResults:
     data = download_dataset()
-    df = process_dataset(data=data, nrows=nrows)
+    total_data = process_dataset(data=data, nrows=nrows)
     model = get_model(model_name="sentence-transformers/all-mpnet-base-v2")
 
     train_cfg = TrainingConfig(
@@ -244,7 +270,14 @@ def finetuning_wf(nrows: int = 1000) -> TrainingResults:
         learning_rate=2e-5
     )
     train_results = train_model(
-        model_folder=model, df=df, train_cfg=train_cfg)
+        model_folder=model,
+        data=total_data,
+        train_cfg=train_cfg)
+
+    eval_results = model_evaluation(
+        results=train_results,
+        total_data=total_data
+    )
 
     return train_results
 
