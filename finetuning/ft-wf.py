@@ -36,6 +36,7 @@ class TrainingResults:
     train_logloss: float
     model: FlyteDirectory
     classifier: FlyteDirectory
+    classifier_dim: int
 
 
 @dataclass
@@ -237,7 +238,8 @@ def train_model(
         average_loss=avg_loss,
         train_logloss=epoch_log_loss,
         model=model_fd,
-        classifier=classifier_fd
+        classifier=classifier_fd,
+        classifier_dim=model.get_sentence_embedding_dimension()
     )
 
     return retVal
@@ -252,7 +254,8 @@ def model_evaluation(
         -> TrainingResults:
     df_val = total_data.val_data.open(pd.DataFrame).all()
     model = sentence_transformers.SentenceTransformer(results.model.path)
-    classifier = ClassifierHead.load_state_dict(
+    classifier = ClassifierHead(results.classifier_dim)
+    classifier.load_state_dict(
         torch.load(
             os.path.join(results.classifier.path, "classifier_head.pt")))
     return evaluate_model(df_val, model, classifier)
